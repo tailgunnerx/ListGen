@@ -1,0 +1,9 @@
+A high-performance, native Android list manager built with Jetpack Compose (Material 3) for detailed task and outcome tracking.
+
+Features:
+- Grid & Compact List Views: Switch between 2-column preview cards and a compact row layout, with smooth long-press drag-and-drop reordering.
+- Detailed Outcomes (Done / Failed): Long-press to mark items as Done (green) or Failed (magenta), or long-press again to reset.
+- Contextual Notes & Reasons: Optionally expand Success Notes or Failure Reasons per list right beneath completed or failed items.
+- Per-List Customization: Full-spectrum neon HSV hue picker, completion progress tracking (Fail = Progress or Success Only), Zen Mode, Lock protection, and Disco Rave Mode shaders.
+- Batch Management & Undo: Multi-select lists to batch-lock or delete with instant one-tap Undo.
+- 100% Offline & Private: No internet permission, zero analytics, zero tracking, and no ads.

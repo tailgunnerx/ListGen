@@ -1,0 +1,5 @@
+- Grid and compact list views with smooth drag-and-drop reordering
+- Done and Failed outcome tracking with expandable notes and reasons
+- Per-list neon HSV hue picker, completion progress bars, Zen Mode, Lock, and Disco Rave Mode
+- Multi-select batch lock and delete with Undo
+- 100% offline DataStore vault with zero permissions or tracking

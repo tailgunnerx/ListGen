@@ -1,0 +1,1 @@
+Fast, offline neon list manager with Done/Failed outcome tracking and notes.
