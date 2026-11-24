@@ -266,7 +266,11 @@ class VaultManager(context: Context) {
 
 // --- State Management ---
 
-class ListViewModel(private val vaultManager: VaultManager) : ViewModel() {
+class ListViewModel(
+    private val vaultManager: VaultManager?,
+    initialLists: List<SList>? = null,
+    initialGridView: Boolean = true
+) : ViewModel() {
     companion object {
         private const val DEBOUNCE_SAVE_MS = 250L
 
@@ -279,10 +283,10 @@ class ListViewModel(private val vaultManager: VaultManager) : ViewModel() {
             }
     }
     
-    var lists by mutableStateOf(listOf<SList>())
-    var isLoaded by mutableStateOf(false)
+    var lists by mutableStateOf(initialLists ?: listOf())
+    var isLoaded by mutableStateOf(initialLists != null)
     var activeListId by mutableStateOf<String?>(null)
-    var isGridView by mutableStateOf(true)
+    var isGridView by mutableStateOf(initialGridView)
     var isSelectionMode by mutableStateOf(false)
     var selectedListIds = mutableStateListOf<String>()
     var focusedItemId by mutableStateOf<String?>(null)
@@ -294,13 +298,16 @@ class ListViewModel(private val vaultManager: VaultManager) : ViewModel() {
     private var hasDirtyState = false
 
     init {
-        viewModelScope.launch {
-            lists = vaultManager.loadLists()
-            isLoaded = true
+        if (vaultManager != null && initialLists == null) {
+            viewModelScope.launch {
+                lists = vaultManager.loadLists()
+                isLoaded = true
+            }
         }
     }
 
     private fun persistImmediate() {
+        val vm = vaultManager ?: return
         if (!isLoaded) return
         debounceSaveJob?.cancel()
         debounceSaveJob = null
@@ -309,12 +316,13 @@ class ListViewModel(private val vaultManager: VaultManager) : ViewModel() {
         appSaveScope.launch {
             saveMutex.withLock {
                 hasDirtyState = false
-                vaultManager.saveLists(snapshot)
+                vm.saveLists(snapshot)
             }
         }
     }
 
     private fun persistDebounced() {
+        val vm = vaultManager ?: return
         if (!isLoaded) return
         hasDirtyState = true
         debounceSaveJob?.cancel()
@@ -324,13 +332,14 @@ class ListViewModel(private val vaultManager: VaultManager) : ViewModel() {
             appSaveScope.launch {
                 saveMutex.withLock {
                     hasDirtyState = false
-                    vaultManager.saveLists(snapshot)
+                    vm.saveLists(snapshot)
                 }
             }
         }
     }
 
     fun flushPendingSaves() {
+        val vm = vaultManager ?: return
         if (!isLoaded || !hasDirtyState) return
         debounceSaveJob?.cancel()
         debounceSaveJob = null
@@ -339,7 +348,7 @@ class ListViewModel(private val vaultManager: VaultManager) : ViewModel() {
             saveMutex.withLock {
                 if (hasDirtyState) {
                     hasDirtyState = false
-                    vaultManager.saveLists(snapshot)
+                    vm.saveLists(snapshot)
                 }
             }
         }
@@ -1670,62 +1679,68 @@ fun ListSettingsSheet(list: SList, onDismiss: () -> Unit, onUpdate: (SList) -> U
         sheetState = sheetState,
         dragHandle = { BottomSheetDefaults.DragHandle(color = Color.Gray) }
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 48.dp).verticalScroll(rememberScrollState())) {
-            Text("List Customization", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Spacer(modifier = Modifier.height(24.dp))
+        ListCustomizationContent(list = list, onDismiss = onDismiss, onUpdate = onUpdate)
+    }
+}
 
-            Text("NAME", color = list.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            TextField(value = list.title, onValueChange = { if (!list.isLocked && it.length <= 30) onUpdate(list.copy(title = it)) }, modifier = Modifier.fillMaxWidth(), enabled = !list.isLocked, singleLine = true, textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 18.sp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = list.accentColor, unfocusedIndicatorColor = Color.DarkGray, disabledContainerColor = Color.Transparent, disabledTextColor = Color.Gray))
-            Spacer(modifier = Modifier.height(32.dp))
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ListCustomizationContent(list: SList, onDismiss: () -> Unit, onUpdate: (SList) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 48.dp).verticalScroll(rememberScrollState())) {
+        Text("List Customization", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Spacer(modifier = Modifier.height(24.dp))
 
-            Text("TRACKING OPTIONS", color = list.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Track Completion", color = Color.White)
-                Switch(enabled = !list.isLocked, checked = list.trackCompletion, onCheckedChange = { onUpdate(list.copy(trackCompletion = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = list.accentColor))
-            }
-            if (list.trackCompletion) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("FAILURE LOGIC", color = list.accentColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
-                        selected = list.failuresCountAsProgress,
-                        onClick = { onUpdate(list.copy(failuresCountAsProgress = true)) },
-                        label = { Text("Fail = Progress") },
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = list.accentColor.copy(alpha = 0.2f), selectedLabelColor = list.accentColor)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(
-                        selected = !list.failuresCountAsProgress,
-                        onClick = { onUpdate(list.copy(failuresCountAsProgress = false)) },
-                        label = { Text("Success Only") },
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = list.accentColor.copy(alpha = 0.2f), selectedLabelColor = list.accentColor)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            Text("EXPERIMENTAL EFFECTS", color = Color(0xFFFFD740), fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Disco Rave Mode 🌈", color = Color.White, fontWeight = FontWeight.Bold)
-                Switch(enabled = !list.isLocked, checked = list.raveMode, onCheckedChange = { onUpdate(list.copy(raveMode = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.Magenta))
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Show Reason on Success", color = Color.White)
-                Switch(enabled = !list.isLocked, checked = list.showReasonOnSuccess, onCheckedChange = { onUpdate(list.copy(showReasonOnSuccess = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = list.accentColor))
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Show Reason on Failure", color = Color.White)
-                Switch(enabled = !list.isLocked, checked = list.showReasonOnFailure, onCheckedChange = { onUpdate(list.copy(showReasonOnFailure = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = list.accentColor))
-            }
-            Spacer(modifier = Modifier.height(32.dp))
+        Text("NAME", color = list.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        TextField(value = list.title, onValueChange = { if (!list.isLocked && it.length <= 30) onUpdate(list.copy(title = it)) }, modifier = Modifier.fillMaxWidth(), enabled = !list.isLocked, singleLine = true, textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 18.sp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = list.accentColor, unfocusedIndicatorColor = Color.DarkGray, disabledContainerColor = Color.Transparent, disabledTextColor = Color.Gray))
+        Spacer(modifier = Modifier.height(32.dp))
 
-            Text("CHOOSE YOUR HUE", color = list.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Spacer(modifier = Modifier.height(16.dp))
-            HuePicker(currentColor = list.accentColor, onColorChanged = { newColor -> if (!list.isLocked) onUpdate(list.copy(accentColorArgb = newColor.toArgb())) })
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = if (list.raveMode) Color.White else list.accentColor, contentColor = if (list.raveMode) Color.Black else Color.White), shape = RoundedCornerShape(16.dp)) { Text("SAVE & FINISH", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        Text("TRACKING OPTIONS", color = list.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Track Completion", color = Color.White)
+            Switch(enabled = !list.isLocked, checked = list.trackCompletion, onCheckedChange = { onUpdate(list.copy(trackCompletion = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = list.accentColor))
         }
+        if (list.trackCompletion) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("FAILURE LOGIC", color = list.accentColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(
+                    selected = list.failuresCountAsProgress,
+                    onClick = { onUpdate(list.copy(failuresCountAsProgress = true)) },
+                    label = { Text("Fail = Progress") },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = list.accentColor.copy(alpha = 0.2f), selectedLabelColor = list.accentColor)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                FilterChip(
+                    selected = !list.failuresCountAsProgress,
+                    onClick = { onUpdate(list.copy(failuresCountAsProgress = false)) },
+                    label = { Text("Success Only") },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = list.accentColor.copy(alpha = 0.2f), selectedLabelColor = list.accentColor)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("EXPERIMENTAL EFFECTS", color = Color(0xFFFFD740), fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Disco Rave Mode 🌈", color = Color.White, fontWeight = FontWeight.Bold)
+            Switch(enabled = !list.isLocked, checked = list.raveMode, onCheckedChange = { onUpdate(list.copy(raveMode = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.Magenta))
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Show Reason on Success", color = Color.White)
+            Switch(enabled = !list.isLocked, checked = list.showReasonOnSuccess, onCheckedChange = { onUpdate(list.copy(showReasonOnSuccess = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = list.accentColor))
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Show Reason on Failure", color = Color.White)
+            Switch(enabled = !list.isLocked, checked = list.showReasonOnFailure, onCheckedChange = { onUpdate(list.copy(showReasonOnFailure = it)) }, colors = SwitchDefaults.colors(checkedThumbColor = list.accentColor))
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("CHOOSE YOUR HUE", color = list.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Spacer(modifier = Modifier.height(16.dp))
+        HuePicker(currentColor = list.accentColor, onColorChanged = { newColor -> if (!list.isLocked) onUpdate(list.copy(accentColorArgb = newColor.toArgb())) })
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = if (list.raveMode) Color.White else list.accentColor, contentColor = if (list.raveMode) Color.Black else Color.White), shape = RoundedCornerShape(16.dp)) { Text("SAVE & FINISH", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
     }
 }
 

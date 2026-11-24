@@ -8,6 +8,14 @@
 
 ListGen is designed for speed, precision, and aesthetic clarity. Built natively in Kotlin with **Jetpack Compose (Material 3)**, it pairs a sleek neon dark-mode interface with smooth 120Hz drag-and-drop organization and rich task outcome tracking.
 
+<p align="center">
+  <img src="screenshots/1_dashboard.png" width="31%" alt="Grid Dashboard" />
+  &nbsp;
+  <img src="screenshots/2_outcomes.png" width="31%" alt="Outcome Tracking & Notes" />
+  &nbsp;
+  <img src="screenshots/3_customization.png" width="31%" alt="List Customization" />
+</p>
+
 ## ✨ Features
 
 - **📊 Grid & Compact List Views:** Switch seamlessly between 2-column preview cards and a compact row layout, with smooth long-press drag-and-drop reordering and edge auto-scrolling.
